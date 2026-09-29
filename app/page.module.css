@@ -55,3 +55,100 @@
     background: #111;
   }
 }
+
+.googleButton {
+  padding: 12px 24px;
+  border-radius: 8px;
+  border: 1px solid #dadce0;
+  background: #fff;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.googleButton:hover {
+  background: #f8f9fa;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 400px;
+}
+
+.form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.form input[type="text"] {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #d5d5d5;
+  font-size: 15px;
+}
+
+.form button {
+  padding: 12px 20px;
+  border-radius: 8px;
+  border: none;
+  background: #000;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.avatarPreview {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid #e5e5e5;
+}
+
+.nav {
+  display: flex;
+  justify-content: flex-end;
+  gap: 16px;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 16px 24px 0;
+  font-size: 14px;
+}
+
+.nav a {
+  color: inherit;
+}
+
+@media (prefers-color-scheme: dark) {
+  .googleButton {
+    background: #1a1a1a;
+    border-color: #333;
+    color: #ededed;
+  }
+
+  .googleButton:hover {
+    background: #222;
+  }
+
+  .form input[type="text"] {
+    background: #111;
+    border-color: #333;
+    color: #ededed;
+  }
+
+  .form button {
+    background: #ededed;
+    color: #000;
+  }
+
+  .avatarPreview {
+    border-color: #333;
+  }
+}

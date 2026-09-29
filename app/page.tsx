@@ -1,4 +1,4 @@
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@/lib/supabase/server";
 import styles from "./page.module.css";
 
 type Caption = {
@@ -14,6 +14,7 @@ type Photo = {
 };
 
 export default async function Home() {
+  const supabase = await createClient();
   const { data: photos, error } = await supabase
     .from("photos")
     .select("id, image_url, alt_text, captions(id, caption_text)")

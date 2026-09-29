@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import Link from "next/link";
 import "./globals.css";
+import styles from "./page.module.css";
+import { createClient } from "@/lib/supabase/server";
+import SignOutButton from "./sign-out-button";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -17,10 +21,29 @@ export const metadata: Metadata = {
   description: "Photos paired with crowd-sourced joke captions, read live from Supabase.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
-      <body>{children}</body>
+      <body>
+        <nav className={styles.nav}>
+          <Link href="/">Home</Link>
+          {user ? (
+            <>
+              <Link href="/dashboard">Dashboard</Link>
+              <Link href="/profile">Profile</Link>
+              <SignOutButton />
+            </>
+          ) : (
+            <Link href="/login">Log in</Link>
+          )}
+        </nav>
+        {children}
+      </body>
     </html>
   );
 }
