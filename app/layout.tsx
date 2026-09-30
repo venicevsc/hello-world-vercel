@@ -27,6 +27,16 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
     data: { user },
   } = await supabase.auth.getUser();
 
+  let avatarUrl: string | null = null;
+  if (user) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("avatar_url")
+      .eq("id", user.id)
+      .maybeSingle();
+    avatarUrl = profile?.avatar_url ?? null;
+  }
+
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
       <body>
@@ -35,7 +45,17 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
           {user ? (
             <>
               <Link href="/dashboard">Dashboard</Link>
-              <Link href="/profile">Profile</Link>
+              <Link href="/profile" className={styles.navProfileLink}>
+                {avatarUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={avatarUrl}
+                    alt="Your profile photo"
+                    className={styles.navAvatar}
+                  />
+                )}
+                Profile
+              </Link>
               <SignOutButton />
             </>
           ) : (

@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import styles from "./page.module.css";
+import LikeButton from "./like-button";
 
 type Caption = {
   id: number;
@@ -30,6 +31,19 @@ export default async function Home() {
     );
   }
 
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  let likedPhotoIds = new Set<number>();
+  if (user) {
+    const { data: likes } = await supabase
+      .from("likes")
+      .select("photo_id")
+      .eq("user_id", user.id);
+    likedPhotoIds = new Set(likes?.map((like) => like.photo_id));
+  }
+
   return (
     <main className={styles.main}>
       <h1>Photo Joke Captions</h1>
@@ -46,6 +60,11 @@ export default async function Home() {
                 <li key={caption.id}>{caption.caption_text}</li>
               ))}
             </ul>
+            <LikeButton
+              photoId={photo.id}
+              isLoggedIn={!!user}
+              initiallyLiked={likedPhotoIds.has(photo.id)}
+            />
           </div>
         ))}
       </div>
