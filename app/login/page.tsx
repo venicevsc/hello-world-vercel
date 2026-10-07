@@ -16,10 +16,16 @@ export default function LoginPage() {
 
   return (
     <main className={styles.main}>
-      <h1>Log in</h1>
-      <button onClick={handleGoogleLogin} className={styles.googleButton}>
-        Continue with Google
-      </button>
+      <div className={`${styles.panel} ${styles.centered}`}>
+        <h1>Log in</h1>
+        <p className={styles.tagline}>
+          You need an account to vote on captions, like photos, and make your
+          own. Browsing the feed is open to everyone.
+        </p>
+        <button onClick={handleGoogleLogin} className={styles.googleButton}>
+          Continue with Google
+        </button>
+      </div>
     </main>
   );
 }

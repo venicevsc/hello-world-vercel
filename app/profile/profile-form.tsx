@@ -9,6 +9,7 @@ type Props = {
   userId: string;
   initialFirstName: string;
   initialLastName: string;
+  initialHometown: string;
   initialAvatarUrl: string | null;
 };
 
@@ -16,11 +17,13 @@ export default function ProfileForm({
   userId,
   initialFirstName,
   initialLastName,
+  initialHometown,
   initialAvatarUrl,
 }: Props) {
   const router = useRouter();
   const [firstName, setFirstName] = useState(initialFirstName);
   const [lastName, setLastName] = useState(initialLastName);
+  const [hometown, setHometown] = useState(initialHometown);
   const [avatarUrl, setAvatarUrl] = useState(initialAvatarUrl);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
@@ -58,6 +61,7 @@ export default function ProfileForm({
       .update({
         first_name: firstName,
         last_name: lastName,
+        hometown: hometown.trim() || null,
         avatar_url: nextAvatarUrl,
       })
       .eq("id", userId);
@@ -94,25 +98,38 @@ export default function ProfileForm({
         />
       </label>
 
+      <div className={styles.formRow}>
+        <label>
+          First name
+          <input
+            type="text"
+            value={firstName}
+            onChange={(e) => setFirstName(e.target.value)}
+          />
+        </label>
+
+        <label>
+          Last name
+          <input
+            type="text"
+            value={lastName}
+            onChange={(e) => setLastName(e.target.value)}
+          />
+        </label>
+      </div>
+
       <label>
-        First name
+        Hometown (optional)
         <input
           type="text"
-          value={firstName}
-          onChange={(e) => setFirstName(e.target.value)}
+          value={hometown}
+          maxLength={60}
+          placeholder="e.g. Chicago"
+          onChange={(e) => setHometown(e.target.value)}
         />
       </label>
 
-      <label>
-        Last name
-        <input
-          type="text"
-          value={lastName}
-          onChange={(e) => setLastName(e.target.value)}
-        />
-      </label>
-
-      <button type="submit" disabled={saving}>
+      <button type="submit" className={styles.buttonPrimary} disabled={saving}>
         {saving ? "Saving..." : "Save profile"}
       </button>
 

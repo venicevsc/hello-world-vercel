@@ -20,22 +20,27 @@ export default async function ProfilePage({
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("first_name, last_name, avatar_url")
+    .select("first_name, last_name, avatar_url, hometown")
     .eq("id", user.id)
     .maybeSingle();
 
   return (
     <main className={styles.main}>
-      <h1>Your Profile</h1>
-      {welcome === "1" && (
-        <p>Welcome! Please add your first and last name below.</p>
-      )}
-      <ProfileForm
-        userId={user.id}
-        initialFirstName={profile?.first_name ?? ""}
-        initialLastName={profile?.last_name ?? ""}
-        initialAvatarUrl={profile?.avatar_url ?? null}
-      />
+      <div className={`${styles.panel} ${styles.centered}`}>
+        <h1>Your Profile</h1>
+        {welcome === "1" && (
+          <p className={styles.notice}>
+            Welcome! Please add your first and last name below.
+          </p>
+        )}
+        <ProfileForm
+          userId={user.id}
+          initialFirstName={profile?.first_name ?? ""}
+          initialLastName={profile?.last_name ?? ""}
+          initialHometown={profile?.hometown ?? ""}
+          initialAvatarUrl={profile?.avatar_url ?? null}
+        />
+      </div>
     </main>
   );
 }
