@@ -8,12 +8,6 @@ import styles from "../page.module.css";
 type Caption = { angle: string; text: string };
 type Result = { imageUrl: string; captions: Caption[] };
 
-const ANGLE_LABELS: Record<string, string> = {
-  photo: "about the photo",
-  name: "name play",
-  both: "photo + name",
-};
-
 const MAX_DIMENSION = 1568;
 
 async function downscale(file: File): Promise<Blob> {
@@ -108,22 +102,18 @@ export default function CreateForm({
   if (result) {
     return (
       <div className={styles.resultBox}>
-        <div className={styles.card}>
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img className={styles.photo} src={result.imageUrl} alt="Your upload" />
-          <ul className={styles.captions}>
-            {result.captions.map((caption, i) => (
-              <li key={i}>
-                <span className={styles.captionText}>{caption.text}</span>
-                <span className={styles.angleTag}>
-                  {ANGLE_LABELS[caption.angle] ?? caption.angle}
-                </span>
-              </li>
-            ))}
-          </ul>
+        <div className={styles.resultGrid}>
+          {result.captions.map((caption, i) => (
+            <article key={i} className={styles.card}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img className={styles.photo} src={result.imageUrl} alt="Your upload" />
+              <p className={styles.postCaption}>{caption.text}</p>
+            </article>
+          ))}
         </div>
         <p className={styles.hint}>
-          Saved. Other users can now vote on these in the feed. You have{" "}
+          Saved as {result.captions.length} separate posts. Other users can now
+          vote on each one in the feed. You have{" "}
           {remaining} generation{remaining === 1 ? "" : "s"} left today.
         </p>
         <div className={styles.actionRow}>

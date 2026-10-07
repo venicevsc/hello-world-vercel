@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server";
-import { GoogleGenAI } from "@google/genai";
 import { createClient } from "@/lib/supabase/server";
-import { MODEL, SYSTEM_PROMPT, buildUserPrompt } from "@/lib/venice-style";
+import { aiErrorResponse, createWithFallback } from "@/lib/gemini";
+import { SYSTEM_PROMPT, buildUserPrompt } from "@/lib/venice-style";
 
 export const maxDuration = 60;
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
-const ANGLES = new Set(["photo", "name", "both"]);
 
 const captionSchema = {
   type: "object",
@@ -17,7 +16,7 @@ const captionSchema = {
       items: {
         type: "object",
         properties: {
-          angle: { type: "string", enum: ["photo", "name", "both"] },
+          angle: { type: "string", enum: ["photo"] },
           text: { type: "string" },
         },
         required: ["angle", "text"],
@@ -81,23 +80,12 @@ export async function POST(request: Request) {
     return fail("That photo is too large.", 400);
   }
 
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("first_name, hometown")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  const userPrompt = buildUserPrompt({
-    firstName: profile?.first_name ?? null,
-    hometown: profile?.hometown ?? null,
-    context,
-  });
+  const userPrompt = buildUserPrompt({ context });
 
   let captions: { angle: string; text: string }[];
+  let model: string;
   try {
-    const ai = new GoogleGenAI({ apiKey });
-    const interaction = await ai.interactions.create({
-      model: MODEL,
+    const result = await createWithFallback(apiKey, {
       system_instruction: SYSTEM_PROMPT,
       input: [
         { type: "text", text: userPrompt },
@@ -112,37 +100,25 @@ export async function POST(request: Request) {
         mime_type: "application/json",
         schema: captionSchema,
       },
-      store: false,
     });
+    model = result.model;
 
-    const raw = interaction.output_text;
-    if (!raw) {
+    if (!result.text) {
       return fail("The AI couldn't caption that photo. Try a different one.", 422);
     }
 
-    const parsed = JSON.parse(raw) as {
-      captions?: { angle?: unknown; text?: unknown }[];
+    const parsed = JSON.parse(result.text) as {
+      captions?: { text?: unknown }[];
     };
     captions = (parsed.captions ?? [])
       .filter(
-        (c): c is { angle: string; text: string } =>
-          typeof c.angle === "string" &&
-          ANGLES.has(c.angle) &&
-          typeof c.text === "string" &&
-          c.text.trim().length > 0,
+        (c): c is { text: string } =>
+          typeof c.text === "string" && c.text.trim().length > 0,
       )
       .slice(0, 3)
-      .map((c) => ({ angle: c.angle, text: c.text.trim().slice(0, 280) }));
+      .map((c) => ({ angle: "photo", text: c.text.trim().slice(0, 280) }));
   } catch (err) {
-    const status =
-      typeof err === "object" && err !== null && "status" in err
-        ? (err as { status?: number }).status
-        : undefined;
-    if (status === 429) {
-      return fail("The AI is rate limited right now. Try again in a minute.", 429);
-    }
-    console.error("Gemini request failed:", err);
-    return fail("The AI couldn't generate captions. Try again.", 502);
+    return aiErrorResponse(err, "The AI couldn't generate captions. Try again.");
   }
 
   if (captions.length === 0) {
@@ -154,7 +130,7 @@ export async function POST(request: Request) {
     {
       p_image_url: imageUrl,
       p_alt_text: context ?? "",
-      p_model: MODEL,
+      p_model: model,
       p_system_prompt: SYSTEM_PROMPT,
       p_user_prompt: userPrompt,
       p_context: context ?? "",

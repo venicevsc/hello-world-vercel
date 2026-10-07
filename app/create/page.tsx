@@ -14,26 +14,15 @@ export default async function CreatePage() {
     redirect("/login?next=/create");
   }
 
-  const [{ data: profile }, { data: remaining }] = await Promise.all([
-    supabase
-      .from("profiles")
-      .select("first_name, hometown")
-      .eq("id", user.id)
-      .maybeSingle(),
-    supabase.rpc("generations_remaining"),
-  ]);
-
-  const personal = [profile?.first_name, profile?.hometown]
-    .filter(Boolean)
-    .join(" and ");
+  const { data: remaining } = await supabase.rpc("generations_remaining");
 
   return (
     <main className={styles.main}>
       <div className={styles.introText}>
         <h1>Make venice-style captions</h1>
         <p className={styles.tagline}>
-          Upload a photo and get three deadpan captions: one about the photo,
-          one that plays on your name, and one that does both.
+          Upload a photo and get three deadpan captions about it. Each one
+          becomes its own post in the feed.
         </p>
       </div>
 
@@ -55,10 +44,8 @@ export default async function CreatePage() {
             </ol>
           </div>
           <p className={styles.notice}>
-            {personal
-              ? `The name-play captions will use your ${profile?.hometown ? "name and hometown" : "name"} (${personal}). `
-              : "Add your name to your profile so the bot has something to play with. "}
-            <Link href="/profile">Edit profile</Link>
+            Want jokes about your name? <Link href="/chat">Text the bot</Link>{" "}
+            instead.
           </p>
           <p className={styles.smallPrint}>
             Uploaded photos and their captions are public. Photos are sent to

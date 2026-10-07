@@ -45,7 +45,8 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
             <Link href="/">Feed</Link>
             {user ? (
               <>
-                <Link href="/create">Create</Link>
+                <Link href="/create">Photo</Link>
+                <Link href="/chat">Chat</Link>
                 <Link href="/dashboard">Dashboard</Link>
                 <Link href="/profile" className={styles.navProfileLink}>
                   {avatarUrl && (

@@ -7,6 +7,7 @@ import VoteButtons from "./vote-buttons";
 type Caption = {
   id: number;
   caption_text: string;
+  setup?: string | null;
   angle: string | null;
   created_at: string;
 };
@@ -19,49 +20,85 @@ type Photo = {
   captions: Caption[];
 };
 
+// A post is one joke: a photo caption, or a chat exchange (photo is null).
+type Post = { photo: Photo | null; caption: Caption };
+
+type Sort = "new" | "top";
+type Kind = "all" | "photos" | "chats";
+
+// Older photo captions were generated with name-play angles.
 const ANGLE_LABELS: Record<string, string> = {
-  photo: "about the photo",
   name: "name play",
   both: "photo + name",
 };
 
-function findCaptionOfTheDay(photos: Photo[], scoreById: Map<number, number>) {
+function findPostOfTheDay(posts: Post[], score: (c: Caption) => number) {
   const since = Date.now() - 24 * 60 * 60 * 1000;
-  let best: { photo: Photo; caption: Caption; score: number } | null = null;
+  let best: (Post & { score: number }) | null = null;
 
-  for (const photo of photos) {
-    for (const caption of photo.captions) {
-      if (new Date(caption.created_at).getTime() < since) continue;
-      const score = scoreById.get(caption.id) ?? 0;
-      if (score > 0 && (!best || score > best.score)) {
-        best = { photo, caption, score };
-      }
+  for (const post of posts) {
+    if (new Date(post.caption.created_at).getTime() < since) continue;
+    const points = score(post.caption);
+    if (points > 0 && (!best || points > best.score)) {
+      best = { ...post, score: points };
     }
   }
   return best;
 }
 
+function feedHref(sort: Sort, kind: Kind) {
+  const params = new URLSearchParams();
+  if (sort !== "new") params.set("sort", sort);
+  if (kind !== "all") params.set("type", kind);
+  const query = params.toString();
+  return query ? `/?${query}` : "/";
+}
+
+function ChatBubbles({ caption }: { caption: Caption }) {
+  return (
+    <div className={styles.chatCard}>
+      <p className={styles.bubbleMe}>{caption.setup}</p>
+      <p className={styles.bubbleBot}>{caption.caption_text}</p>
+    </div>
+  );
+}
+
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ sort?: string }>;
+  searchParams: Promise<{ sort?: string; type?: string }>;
 }) {
-  const { sort } = await searchParams;
-  const sortMode = sort === "top" ? "top" : "new";
+  const { sort, type } = await searchParams;
+  const sortMode: Sort = sort === "top" ? "top" : "new";
+  const kind: Kind = type === "photos" || type === "chats" ? type : "all";
 
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { data: photos, error } = await supabase
-    .from("photos")
-    .select(
-      "id, image_url, alt_text, created_at, captions(id, caption_text, angle, created_at)",
-    )
-    .order("created_at", { ascending: false })
-    .limit(40)
-    .returns<Photo[]>();
+  const [photosRes, chatsRes] = await Promise.all([
+    supabase
+      .from("photos")
+      .select(
+        "id, image_url, alt_text, created_at, captions(id, caption_text, angle, created_at)",
+      )
+      .order("created_at", { ascending: false })
+      .limit(40)
+      .returns<Photo[]>(),
+    supabase
+      .from("captions")
+      .select("id, caption_text, setup, angle, created_at")
+      .is("photo_id", null)
+      .order("created_at", { ascending: false })
+      .limit(60)
+      .returns<Caption[]>(),
+  ]);
+
+  const { data: photos, error } = photosRes;
+  // A chat query failure (e.g. chat_jokes.sql not run yet) shouldn't hide the photo feed.
+  if (chatsRes.error) console.error("Loading chat posts failed:", chatsRes.error);
+  const chats = chatsRes.data ?? [];
 
   if (error || !photos) {
     return (
@@ -72,7 +109,10 @@ export default async function Home({
     );
   }
 
-  const captionIds = photos.flatMap((photo) => photo.captions.map((c) => c.id));
+  const captionIds = [
+    ...photos.flatMap((photo) => photo.captions.map((c) => c.id)),
+    ...chats.map((c) => c.id),
+  ];
 
   const [scores, myVotes, myLikes] = await Promise.all([
     captionIds.length
@@ -105,39 +145,67 @@ export default async function Home({
   );
   const likedPhotoIds = new Set<number>(myLikes.map((l) => l.photo_id as number));
 
-  const feed = photos.map((photo) => ({
-    ...photo,
-    captions: [...photo.captions].sort(
-      (a, b) =>
-        (scoreById.get(b.id) ?? 0) - (scoreById.get(a.id) ?? 0) || a.id - b.id,
-    ),
-  }));
+  // One post per caption, so each joke is voted on by itself.
+  const score = (caption: Caption) => scoreById.get(caption.id) ?? 0;
+  const newest = (a: Caption, b: Caption) =>
+    new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
 
+  // Each photo is a queue of its posts; each chat post is a queue of one.
+  const queues: Post[][] = [
+    ...(kind === "chats"
+      ? []
+      : photos.map((photo) =>
+          [...photo.captions]
+            .sort((a, b) => score(b) - score(a) || a.id - b.id)
+            .map((caption) => ({ photo, caption })),
+        )),
+    ...(kind === "photos" ? [] : chats.map((caption) => [{ photo: null, caption }])),
+  ]
+    .filter((queue) => queue.length > 0)
+    .sort((a, b) => newest(a[0].caption, b[0].caption));
+
+  let feed: Post[];
   if (sortMode === "top") {
-    const best = (photo: Photo) =>
-      Math.max(-Infinity, ...photo.captions.map((c) => scoreById.get(c.id) ?? 0));
-    feed.sort(
-      (a, b) =>
-        best(b) - best(a) ||
-        new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
-    );
+    feed = queues
+      .flat()
+      .sort((a, b) => score(b.caption) - score(a.caption) || newest(a.caption, b.caption));
+  } else {
+    // Round-robin, newest first, so the same photo doesn't show up several times in a row.
+    feed = [];
+    for (let round = 0; queues.some((q) => q.length > round); round++) {
+      for (const queue of queues) {
+        if (queue[round]) feed.push(queue[round]);
+      }
+    }
   }
 
-  const captionOfTheDay = findCaptionOfTheDay(photos, scoreById);
+  const postOfTheDay = findPostOfTheDay(
+    [
+      ...photos.flatMap((photo) => photo.captions.map((caption) => ({ photo, caption }))),
+      ...chats.map((caption) => ({ photo: null, caption })),
+    ],
+    score,
+  );
 
   return (
     <main className={styles.main}>
       <section className={styles.intro}>
         <div className={styles.introText}>
-          <h1>Deadpan captions for your photos</h1>
+          <h1>Deadpan jokes, venice-style</h1>
           <p className={styles.tagline}>
-            Upload a photo and the bot answers it venice-style: literal,
-            absurd, and completely straight-faced. Vote for the funniest.
+            Upload a photo or text the bot, and it answers venice-style:
+            literal, absurd, and completely straight-faced. Vote for the
+            funniest.
           </p>
           {user ? (
-            <Link href="/create" className={styles.buttonPrimary}>
-              Make captions
-            </Link>
+            <div className={styles.actionRow}>
+              <Link href="/create" className={styles.buttonPrimary}>
+                Caption a photo
+              </Link>
+              <Link href="/chat" className={styles.buttonSecondary}>
+                Text the bot
+              </Link>
+            </div>
           ) : (
             <Link href="/login" className={styles.buttonPrimary}>
               Log in to vote and create
@@ -145,57 +213,72 @@ export default async function Home({
           )}
         </div>
 
-        {captionOfTheDay ? (
-          <section className={styles.hero} aria-label="Caption of the day">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
+        <section className={styles.hero} aria-label="Joke of the day">
+          {postOfTheDay?.photo && (
+            // eslint-disable-next-line @next/next/no-img-element
             <img
               className={styles.heroImage}
-              src={captionOfTheDay.photo.image_url}
-              alt={captionOfTheDay.photo.alt_text ?? "Caption of the day photo"}
+              src={postOfTheDay.photo.image_url}
+              alt={postOfTheDay.photo.alt_text ?? "Joke of the day photo"}
             />
-            <div>
-              <p className={styles.heroLabel}>Caption of the day</p>
-              <p className={styles.heroCaption}>{captionOfTheDay.caption.caption_text}</p>
-              <p className={styles.hint}>
-                {captionOfTheDay.score} point{captionOfTheDay.score === 1 ? "" : "s"}
-              </p>
-            </div>
-          </section>
-        ) : (
-          <section className={styles.hero} aria-label="Caption of the day">
-            <div>
-              <p className={styles.heroLabel}>Caption of the day</p>
-              <p className={styles.heroCaption}>&ldquo;what&apos;s up?&rdquo; / &ldquo;the ceiling&rdquo;</p>
-              <p className={styles.hint}>
-                The top-voted caption from the last 24 hours shows up here.
-              </p>
-            </div>
-          </section>
-        )}
+          )}
+          <div>
+            <p className={styles.heroLabel}>Joke of the day</p>
+            {postOfTheDay ? (
+              <>
+                <p className={styles.heroCaption}>
+                  {postOfTheDay.caption.setup
+                    ? `“${postOfTheDay.caption.setup}” / “${postOfTheDay.caption.caption_text}”`
+                    : postOfTheDay.caption.caption_text}
+                </p>
+                <p className={styles.hint}>
+                  {postOfTheDay.score} point{postOfTheDay.score === 1 ? "" : "s"}
+                </p>
+              </>
+            ) : (
+              <>
+                <p className={styles.heroCaption}>&ldquo;what&apos;s up?&rdquo; / &ldquo;the ceiling&rdquo;</p>
+                <p className={styles.hint}>
+                  The top-voted joke from the last 24 hours shows up here.
+                </p>
+              </>
+            )}
+          </div>
+        </section>
       </section>
 
       {!user && (
         <p className={styles.notice}>
           You&apos;re browsing as a guest. <Link href="/login">Log in</Link> to
-          vote on captions, like photos, and make your own.
+          vote on jokes, like photos, and make your own.
         </p>
       )}
 
       <div className={styles.toolbar}>
         <h2>The feed</h2>
-        <div className={styles.sortRow}>
-          <Link
-            href="/?sort=new"
-            className={sortMode === "new" ? styles.sortActive : styles.sortLink}
-          >
-            New
-          </Link>
-          <Link
-            href="/?sort=top"
-            className={sortMode === "top" ? styles.sortActive : styles.sortLink}
-          >
-            Top
-          </Link>
+        <div className={styles.actionRow}>
+          <div className={styles.sortRow}>
+            {(["all", "photos", "chats"] as const).map((k) => (
+              <Link
+                key={k}
+                href={feedHref(sortMode, k)}
+                className={kind === k ? styles.sortActive : styles.sortLink}
+              >
+                {k === "all" ? "All" : k === "photos" ? "Photos" : "Chats"}
+              </Link>
+            ))}
+          </div>
+          <div className={styles.sortRow}>
+            {(["new", "top"] as const).map((s) => (
+              <Link
+                key={s}
+                href={feedHref(s, kind)}
+                className={sortMode === s ? styles.sortActive : styles.sortLink}
+              >
+                {s === "new" ? "New" : "Top"}
+              </Link>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -203,45 +286,49 @@ export default async function Home({
         <p className={styles.empty}>
           Nothing here yet.{" "}
           {user ? (
-            <Link href="/create">Be the first to make one.</Link>
+            <Link href={kind === "chats" ? "/chat" : "/create"}>
+              Be the first to make one.
+            </Link>
           ) : (
             <Link href="/login">Log in to make the first one.</Link>
           )}
         </p>
       ) : (
         <div className={styles.grid}>
-          {feed.map((photo) => (
-            <div key={photo.id} className={styles.card}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                className={styles.photo}
-                src={photo.image_url}
-                alt={photo.alt_text ?? "Joke photo"}
-              />
-              <ul className={styles.captions}>
-                {photo.captions.map((caption) => (
-                  <li key={caption.id}>
-                    <VoteButtons
-                      captionId={caption.id}
-                      userId={user?.id ?? null}
-                      initialScore={scoreById.get(caption.id) ?? 0}
-                      initialVote={(voteById.get(caption.id) ?? 0) as -1 | 0 | 1}
-                    />
-                    <span className={styles.captionText}>{caption.caption_text}</span>
-                    {caption.angle && (
-                      <span className={styles.angleTag}>
-                        {ANGLE_LABELS[caption.angle] ?? caption.angle}
-                      </span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-              <LikeButton
-                photoId={photo.id}
-                isLoggedIn={!!user}
-                initiallyLiked={likedPhotoIds.has(photo.id)}
-              />
-            </div>
+          {feed.map(({ photo, caption }) => (
+            <article key={caption.id} className={styles.card}>
+              {photo ? (
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    className={styles.photo}
+                    src={photo.image_url}
+                    alt={photo.alt_text ?? "Joke photo"}
+                  />
+                  <p className={styles.postCaption}>{caption.caption_text}</p>
+                </>
+              ) : (
+                <ChatBubbles caption={caption} />
+              )}
+              <div className={styles.postFooter}>
+                <VoteButtons
+                  captionId={caption.id}
+                  userId={user?.id ?? null}
+                  initialScore={score(caption)}
+                  initialVote={(voteById.get(caption.id) ?? 0) as -1 | 0 | 1}
+                />
+                {caption.angle && ANGLE_LABELS[caption.angle] && (
+                  <span className={styles.angleTag}>{ANGLE_LABELS[caption.angle]}</span>
+                )}
+                {photo && (
+                  <LikeButton
+                    photoId={photo.id}
+                    isLoggedIn={!!user}
+                    initiallyLiked={likedPhotoIds.has(photo.id)}
+                  />
+                )}
+              </div>
+            </article>
           ))}
         </div>
       )}
