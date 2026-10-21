@@ -4,6 +4,17 @@ import { NextResponse, type NextRequest } from "next/server";
 const PROTECTED_PATHS = ["/profile", "/dashboard", "/create", "/chat"];
 
 export async function proxy(request: NextRequest) {
+  // An OAuth code that lands on any other page (for example when Supabase falls
+  // back to the Site URL root) would be ignored and look like a failed sign-in.
+  if (
+    request.nextUrl.searchParams.has("code") &&
+    request.nextUrl.pathname !== "/auth/callback"
+  ) {
+    const callbackUrl = request.nextUrl.clone();
+    callbackUrl.pathname = "/auth/callback";
+    return NextResponse.redirect(callbackUrl);
+  }
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
