@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { aiErrorResponse, createWithFallback } from "@/lib/gemini";
+import { activeModels, aiErrorResponse, createWithFallback } from "@/lib/gemini";
 import { SYSTEM_PROMPT, buildUserPrompt } from "@/lib/venice-style";
 
 export const maxDuration = 60;
@@ -82,25 +82,34 @@ export async function POST(request: Request) {
 
   const userPrompt = buildUserPrompt({ context });
 
+  const models = await activeModels(supabase);
+  if (models.length === 0) {
+    return fail("Caption generation is switched off right now. Please try again later.", 503);
+  }
+
   let captions: { angle: string; text: string }[];
   let model: string;
   try {
-    const result = await createWithFallback(apiKey, {
-      system_instruction: SYSTEM_PROMPT,
-      input: [
-        { type: "text", text: userPrompt },
-        {
-          type: "image",
-          data: imageBytes.toString("base64"),
-          mime_type: mimeType as "image/jpeg" | "image/png" | "image/webp",
+    const result = await createWithFallback(
+      apiKey,
+      {
+        system_instruction: SYSTEM_PROMPT,
+        input: [
+          { type: "text", text: userPrompt },
+          {
+            type: "image",
+            data: imageBytes.toString("base64"),
+            mime_type: mimeType as "image/jpeg" | "image/png" | "image/webp",
+          },
+        ],
+        response_format: {
+          type: "text",
+          mime_type: "application/json",
+          schema: captionSchema,
         },
-      ],
-      response_format: {
-        type: "text",
-        mime_type: "application/json",
-        schema: captionSchema,
       },
-    });
+      models,
+    );
     model = result.model;
 
     if (!result.text) {

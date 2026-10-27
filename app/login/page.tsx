@@ -8,6 +8,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   auth_failed:
     "That sign-in didn't finish. Please try again, and stay on this page until Google sends you back.",
   missing_code: "That sign-in link was incomplete. Please try again.",
+  not_allowed:
+    "That email address isn't allowed to sign in right now. Ask the site's admin to add it, or try a different Google account.",
 };
 
 export default async function LoginPage({

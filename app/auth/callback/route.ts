@@ -37,6 +37,15 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${origin}/login?error=${reason}`);
   }
 
+  // Sign-in rules from the admin panel (allowed domains, whitelisted emails).
+  // Everyone may sign in until a rule exists, and admins always can. Only an
+  // explicit "no" blocks: if the check itself fails, don't lock everyone out.
+  const { data: allowed } = await supabase.rpc("my_signup_allowed");
+  if (allowed === false) {
+    await supabase.auth.signOut();
+    return NextResponse.redirect(`${origin}/login?error=not_allowed`);
+  }
+
   const { data: profile } = await supabase
     .from("profiles")
     .select("first_name, last_name")

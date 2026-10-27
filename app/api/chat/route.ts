@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { aiErrorResponse, createWithFallback } from "@/lib/gemini";
+import { activeModels, aiErrorResponse, createWithFallback } from "@/lib/gemini";
 import {
   CHAT_SYSTEM_PROMPT,
   buildChatPrompt,
@@ -71,13 +71,22 @@ export async function POST(request: Request) {
     message,
   });
 
+  const models = await activeModels(supabase);
+  if (models.length === 0) {
+    return fail("The bot is switched off right now. Please try again later.", 503);
+  }
+
   let reply: string;
   let model: string;
   try {
-    const result = await createWithFallback(apiKey, {
-      system_instruction: CHAT_SYSTEM_PROMPT,
-      input: userPrompt,
-    });
+    const result = await createWithFallback(
+      apiKey,
+      {
+        system_instruction: CHAT_SYSTEM_PROMPT,
+        input: userPrompt,
+      },
+      models,
+    );
     model = result.model;
     // Keep only the first line and drop wrapping quotes the model sometimes adds.
     reply = clean((result.text ?? "").split("\n")[0].replace(/^["“']+|["”']+$/g, ""), 280);

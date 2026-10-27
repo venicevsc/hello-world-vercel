@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { MODELS } from "@/lib/venice-style";
 
 // A hung model gets at most this long; quota errors come back instantly.
@@ -16,16 +17,26 @@ export function statusOf(err: unknown) {
     : undefined;
 }
 
-// Runs one request against each model in MODELS until one answers.
+// The models to try, in order, as managed in the admin panel (LLM models:
+// active, fallback order). Only if the lookup itself fails does the built-in
+// list keep captions working. An empty list means an admin switched them all off.
+export async function activeModels(supabase: SupabaseClient): Promise<string[]> {
+  const { data, error } = await supabase.rpc("active_llm_models");
+  if (error || !Array.isArray(data)) return MODELS;
+  return data.filter((m): m is string => typeof m === "string" && m.length > 0);
+}
+
+// Runs one request against each model in turn until one answers.
 export async function createWithFallback(
   apiKey: string,
   params: Omit<CreateParams, "model" | "store">,
+  models: string[] = MODELS,
 ) {
   const ai = new GoogleGenAI({ apiKey });
   const deadline = Date.now() + TOTAL_BUDGET_MS;
   let lastError: unknown = new Error("No models configured.");
 
-  for (const model of MODELS) {
+  for (const model of models) {
     const timeLeft = deadline - Date.now();
     if (timeLeft < MIN_ATTEMPT_MS) break;
     try {
